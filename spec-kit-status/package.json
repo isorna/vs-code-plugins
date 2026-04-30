@@ -1,0 +1,72 @@
+{
+  "name": "spec-kit-status",
+  "displayName": "Spec Kit Status",
+  "description": "Shows the current Spec Kit phase, workflow, feature, and completion inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "spec-kit",
+    "specify",
+    "status",
+    "workflow",
+    "productivity"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:specKitStatusView",
+    "onCommand:specKitStatus.refresh"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "specKitStatus.refresh",
+        "title": "Spec Kit Status: Refresh"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "specKitStatusView",
+          "name": "Spec Kit Status"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "specKitStatus.refresh",
+          "when": "view == specKitStatusView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Spec Kit Status",
+      "properties": {
+        "specKitStatus.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a Spec Kit summary item in the VS Code status bar."
+        },
+        "specKitStatus.preferGitBranchFeature": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer the active git branch when detecting the current Spec Kit feature."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node ./test/status.test.js",
+    "package:vsix": "npx @vscode/vsce package --allow-missing-repository"
+  }
+}

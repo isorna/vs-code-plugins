@@ -1,0 +1,77 @@
+{
+  "name": "kitt-scanner-statusbar",
+  "displayName": "KITT Scanner StatusBar",
+  "description": "Añade un escáner estilo KITT a la barra de estado de VS Code con color y velocidad configurables.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "kitt",
+    "knight-rider",
+    "scanner",
+    "statusbar",
+    "animation"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:kittScanner.openSettings",
+    "onCommand:kittScanner.enable",
+    "onCommand:kittScanner.disable",
+    "onCommand:kittScanner.toggle"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kittScanner.openSettings",
+        "title": "KITT Scanner: Open Settings"
+      },
+      {
+        "command": "kittScanner.enable",
+        "title": "KITT Scanner: Enable"
+      },
+      {
+        "command": "kittScanner.disable",
+        "title": "KITT Scanner: Disable"
+      },
+      {
+        "command": "kittScanner.toggle",
+        "title": "KITT Scanner: Toggle"
+      }
+    ],
+    "configuration": {
+      "title": "KITT Scanner",
+      "properties": {
+        "kittScanner.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Activa o desactiva el escáner KITT en la barra de estado."
+        },
+        "kittScanner.color": {
+          "type": "string",
+          "default": "#FF0000",
+          "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+          "description": "Color hexadecimal del escáner KITT."
+        },
+        "kittScanner.speed": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 40,
+          "maximum": 1000,
+          "description": "Velocidad de la animación en milisegundos por frame. Un valor menor la hace más rápida."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node ./test/kittScanner.test.js",
+    "package:vsix": "npx @vscode/vsce package --allow-missing-repository"
+  }
+}

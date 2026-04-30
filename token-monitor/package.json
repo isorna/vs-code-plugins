@@ -1,0 +1,109 @@
+{
+  "name": "token-monitor",
+  "displayName": "Token Cost Monitor",
+  "description": "Estimates token counts and costs for text before sending to AI assistants. Shows live status bar counts with configurable threshold warnings.",
+  "version": "0.1.0",
+  "publisher": "custom",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "tokenMonitor.estimateSelection",
+        "title": "Estimate Tokens: Selection",
+        "category": "Token Monitor"
+      },
+      {
+        "command": "tokenMonitor.estimateFile",
+        "title": "Estimate Tokens: Entire File",
+        "category": "Token Monitor"
+      },
+      {
+        "command": "tokenMonitor.estimateClipboard",
+        "title": "Estimate Tokens: Clipboard",
+        "category": "Token Monitor"
+      },
+      {
+        "command": "tokenMonitor.showSessionReport",
+        "title": "Show Session Cost Report",
+        "category": "Token Monitor"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "tokenMonitor.estimateSelection",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Token Cost Monitor",
+      "properties": {
+        "tokenMonitor.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable the Token Cost Monitor."
+        },
+        "tokenMonitor.warningThreshold": {
+          "type": "number",
+          "default": 4000,
+          "description": "Token count above which a warning notification is shown."
+        },
+        "tokenMonitor.criticalThreshold": {
+          "type": "number",
+          "default": 16000,
+          "description": "Token count above which an error notification is shown."
+        },
+        "tokenMonitor.costPerMillionInputTokens": {
+          "type": "number",
+          "default": 3.0,
+          "description": "Cost in USD per 1 million input tokens."
+        },
+        "tokenMonitor.costPerMillionOutputTokens": {
+          "type": "number",
+          "default": 15.0,
+          "description": "Cost in USD per 1 million output tokens."
+        },
+        "tokenMonitor.estimatedOutputRatio": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Estimated output-to-input token ratio for cost projection (e.g., 0.5 means output is ~50% of input tokens)."
+        },
+        "tokenMonitor.notificationCooldownSeconds": {
+          "type": "number",
+          "default": 30,
+          "description": "Minimum seconds between repeated threshold notifications."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/jest": "^29.5.0",
+    "esbuild": "^0.20.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "js-tiktoken": "^1.0.10"
+  }
+}

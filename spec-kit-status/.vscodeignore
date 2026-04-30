@@ -1,0 +1,5 @@
+.gitignore
+.agents/**
+.github/**
+.specify/**
+test/
