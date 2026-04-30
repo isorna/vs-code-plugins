@@ -92,6 +92,7 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "vsce package",
+    "package:vsix": "vsce package --allow-missing-repository",
     "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
   "devDependencies": {
