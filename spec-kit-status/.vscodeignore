@@ -2,4 +2,12 @@
 .agents/**
 .github/**
 .specify/**
-test/
+
+src/**
+test/**
+node_modules/**
+.vscode/**
+tsconfig.json
+esbuild.js
+.vscodeignore
+**/*.map
