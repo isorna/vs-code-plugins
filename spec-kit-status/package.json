@@ -2,7 +2,7 @@
   "name": "spec-kit-status",
   "displayName": "Spec Kit Status",
   "description": "Shows the current Spec Kit phase, workflow, feature, and completion inside VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -22,14 +22,32 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:specKitStatusView",
-    "onCommand:specKitStatus.refresh"
+    "onCommand:specKitStatus.refresh",
+    "onCommand:specKitStatus.openFile",
+    "onCommand:specKitStatus.newFeature"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
         "command": "specKitStatus.refresh",
-        "title": "Spec Kit Status: Refresh"
+        "title": "Refresh",
+        "icon": {
+          "light": "assets/refresh.svg",
+          "dark": "assets/refresh.svg"
+        }
+      },
+      {
+        "command": "specKitStatus.openFile",
+        "title": "Open File"
+      },
+      {
+        "command": "specKitStatus.newFeature",
+        "title": "New Feature",
+        "icon": {
+          "light": "assets/add.svg",
+          "dark": "assets/add.svg"
+        }
       }
     ],
     "views": {
@@ -46,6 +64,11 @@
           "command": "specKitStatus.refresh",
           "when": "view == specKitStatusView",
           "group": "navigation"
+        },
+        {
+          "command": "specKitStatus.newFeature",
+          "when": "view == specKitStatusView",
+          "group": "navigation@1"
         }
       ]
     },
@@ -61,6 +84,11 @@
           "type": "boolean",
           "default": true,
           "description": "Prefer the active git branch when detecting the current Spec Kit feature."
+        },
+        "specKitStatus.specsDirectory": {
+          "type": "string",
+          "default": "specs",
+          "description": "Relative or absolute path to the folder that contains the Spec Kit feature directories."
         }
       }
     }

@@ -70,9 +70,11 @@ async function collectSpecKitStatus(rootPath, options = {}) {
       ? buildWorkflowDetail(context)
       : `${workflow} workflow inferred from the available Spec Kit artifacts.`,
     featureDetail: buildFeatureDetail(context),
+    featureFilePath: context.files?.spec ?? null,
     completionDetail: hasConfiguredWorkflow
       ? buildConfiguredCompletionDetail(context, completion)
-      : buildLegacyCompletionDetail(context, completion)
+      : buildLegacyCompletionDetail(context, completion),
+    userStories: context.userStories
   };
 }
 
@@ -107,6 +109,10 @@ async function buildStatusContext(rootPath, options) {
   const hasDataModel = files ? await exists(files.dataModel) : false;
   const hasQuickstart = files ? await exists(files.quickstart) : false;
   const taskStats = hasTasks ? await parseTaskStats(files.tasks) : emptyStats();
+  const userStoryTaskStats = hasTasks ? await parseUserStoryTaskStats(files.tasks) : new Map();
+  const userStories = feature?.directory
+    ? await parseUserStories(feature.directory, files?.spec ?? null, userStoryTaskStats)
+    : [];
   const checklistStats = files ? await parseChecklistDirectory(files.checklistsDir) : emptyStatsWithFiles();
   const contractStats = files ? await countFiles(files.contractsDir) : { fileCount: 0 };
 
@@ -128,6 +134,7 @@ async function buildStatusContext(rootPath, options) {
     hasDataModel,
     hasQuickstart,
     taskStats,
+    userStories,
     checklistStats,
     contractStats
   };
@@ -506,6 +513,7 @@ function buildLegacyCompletionDetail(context, completion) {
 }
 
 async function detectFeature(rootPath, options = {}, featureConfig = null, gitBranch = null) {
+  const specsRoot = resolveSpecsRoot(rootPath, options.specsDirectory);
   const envFeatureDirectory = process.env.SPECIFY_FEATURE_DIRECTORY;
   if (envFeatureDirectory) {
     return createFeatureFromDirectory(rootPath, envFeatureDirectory, "SPECIFY_FEATURE_DIRECTORY");
@@ -518,17 +526,17 @@ async function detectFeature(rootPath, options = {}, featureConfig = null, gitBr
   if (options.preferGitBranchFeature !== false) {
     const featureId = extractFeatureId(gitBranch);
     if (featureId) {
-      return createFeatureFromDirectory(rootPath, path.join("specs", featureId), `git branch "${gitBranch}"`);
+      return createFeatureFromDirectory(specsRoot, path.join(specsRoot, featureId), `git branch "${gitBranch}"`, rootPath);
     }
   }
 
-  return getLatestFeature(path.join(rootPath, "specs"), rootPath);
+  return getLatestFeature(specsRoot, rootPath);
 }
 
-function createFeatureFromDirectory(rootPath, featureDirectory, source) {
+function createFeatureFromDirectory(basePath, featureDirectory, source, rootPath = basePath) {
   const directory = path.isAbsolute(featureDirectory)
     ? path.normalize(featureDirectory)
-    : path.resolve(rootPath, featureDirectory);
+    : path.resolve(basePath, featureDirectory);
   return {
     id: path.basename(directory),
     source,
@@ -776,6 +784,103 @@ async function parseTaskStats(tasksPath) {
   return parseMarkdownChecklistStats(tasksPath);
 }
 
+async function parseUserStories(featureDirectory, specPath, userStoryTaskStats = new Map()) {
+  const storyFiles = await findUserStoryFiles(featureDirectory);
+  if (storyFiles.length > 0) {
+    return Promise.all(storyFiles.map((filePath) => parseUserStoryFile(filePath, userStoryTaskStats)));
+  }
+
+  if (!specPath) {
+    return [];
+  }
+
+  const content = await fs.readFile(specPath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const userStories = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = matchUserStoryHeading(lines[index]);
+    if (!match) {
+      continue;
+    }
+
+    const id = `US${match.storyNumber}`;
+    const stats = userStoryTaskStats.get(id) ?? emptyStats();
+    userStories.push({
+      id,
+      title: match.title || id,
+      filePath: specPath,
+      line: index + 1,
+      totalTasks: stats.total,
+      completedTasks: stats.completed,
+      status: deriveUserStoryStatus(stats)
+    });
+  }
+
+  return userStories;
+}
+
+async function parseUserStoryFile(filePath, userStoryTaskStats) {
+  const content = await fs.readFile(filePath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const userStoryId = extractUserStoryIdFromFileName(path.basename(filePath));
+  const headingLineIndex = lines.findIndex((line) => /^#{1,6}\s+/.test(line));
+  const titleFromHeading = headingLineIndex >= 0
+    ? lines[headingLineIndex].replace(/^#{1,6}\s+/, "").trim()
+    : "";
+  const title = titleFromHeading || path.basename(filePath, path.extname(filePath));
+  const fileChecklistStats = deriveChecklistStatsFromContent(lines);
+  const stats = fileChecklistStats.total > 0
+    ? fileChecklistStats
+    : (userStoryId ? userStoryTaskStats.get(userStoryId) : null) ?? emptyStats();
+
+  return {
+    id: userStoryId ?? title,
+    title,
+    filePath,
+    line: headingLineIndex >= 0 ? headingLineIndex + 1 : 1,
+    totalTasks: stats.total,
+    completedTasks: stats.completed,
+    status: deriveUserStoryStatus(stats)
+  };
+}
+
+async function parseUserStoryTaskStats(tasksPath) {
+  const content = await fs.readFile(tasksPath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const statsByUserStory = new Map();
+  let currentUserStoryId = null;
+
+  for (const line of lines) {
+    const storyHeading = matchUserStoryHeading(line);
+    if (storyHeading) {
+      currentUserStoryId = `US${storyHeading.storyNumber}`;
+    }
+
+    if (!/^\s*[-*]\s+\[( |x|X)\]\s+/.test(line)) {
+      continue;
+    }
+
+    const inlineUserStoryIds = extractUserStoryReferences(line);
+    const targetUserStoryIds = inlineUserStoryIds.length > 0
+      ? inlineUserStoryIds
+      : currentUserStoryId
+        ? [currentUserStoryId]
+        : [];
+
+    for (const userStoryId of targetUserStoryIds) {
+      const stats = statsByUserStory.get(userStoryId) ?? emptyStats();
+      stats.total += 1;
+      if (/^\s*[-*]\s+\[(x|X)\]\s+/.test(line)) {
+        stats.completed += 1;
+      }
+      statsByUserStory.set(userStoryId, stats);
+    }
+  }
+
+  return statsByUserStory;
+}
+
 async function parseChecklistDirectory(checklistsDir) {
   if (!(await isDirectory(checklistsDir))) {
     return emptyStatsWithFiles();
@@ -800,20 +905,7 @@ async function parseChecklistDirectory(checklistsDir) {
 
 async function parseMarkdownChecklistStats(filePath) {
   const content = await fs.readFile(filePath, "utf8");
-  const lines = content.split(/\r?\n/);
-  let total = 0;
-  let completed = 0;
-
-  for (const line of lines) {
-    if (/^\s*[-*]\s+\[( |x|X)\]\s+/.test(line)) {
-      total += 1;
-    }
-    if (/^\s*[-*]\s+\[(x|X)\]\s+/.test(line)) {
-      completed += 1;
-    }
-  }
-
-  return { total, completed };
+  return deriveChecklistStatsFromContent(content.split(/\r?\n/));
 }
 
 async function listMarkdownFiles(directoryPath) {
@@ -859,6 +951,102 @@ async function countFiles(directoryPath) {
 
 function stripYamlValue(value) {
   return value.replace(/^["']|["']$/g, "");
+}
+
+function resolveSpecsRoot(rootPath, specsDirectory = "specs") {
+  return path.isAbsolute(specsDirectory)
+    ? path.normalize(specsDirectory)
+    : path.resolve(rootPath, specsDirectory);
+}
+
+async function findUserStoryFiles(featureDirectory) {
+  if (!(await isDirectory(featureDirectory))) {
+    return [];
+  }
+
+  const entries = await fs.readdir(featureDirectory, { withFileTypes: true });
+  const storyFiles = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
+      continue;
+    }
+
+    const lowerName = entry.name.toLowerCase();
+    if (["spec.md", "plan.md", "tasks.md", "research.md", "data-model.md", "quickstart.md"].includes(lowerName)) {
+      continue;
+    }
+    if (!/^us\d+/i.test(entry.name)) {
+      continue;
+    }
+
+    storyFiles.push(path.join(featureDirectory, entry.name));
+  }
+
+  storyFiles.sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+  return storyFiles;
+}
+
+function extractUserStoryIdFromFileName(fileName) {
+  const match = fileName.match(/^(us\d+)/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function matchUserStoryHeading(line) {
+  const match = line.match(/^\s{0,3}#{2,6}\s+(?:user\s+story\s*(\d+)|us\s*(\d+)|us(\d+))\b(?:\s*[:\-]\s*|\s+)?(.+?)?\s*$/i);
+  if (!match) {
+    return null;
+  }
+
+  const storyNumber = match[1] ?? match[2] ?? match[3];
+  const rawTitle = match[4]?.trim() ?? "";
+  return {
+    storyNumber,
+    title: rawTitle.replace(/\s+/g, " ")
+  };
+}
+
+function extractUserStoryReferences(line) {
+  const matches = line.matchAll(/\b(?:user\s+story\s*(\d+)|us\s*(\d+)|us(\d+))\b/gi);
+  const userStoryIds = new Set();
+
+  for (const match of matches) {
+    const storyNumber = match[1] ?? match[2] ?? match[3];
+    if (storyNumber) {
+      userStoryIds.add(`US${storyNumber}`);
+    }
+  }
+
+  return [...userStoryIds];
+}
+
+function deriveUserStoryStatus(stats) {
+  if (stats.total === 0) {
+    return "No tasks";
+  }
+  if (stats.completed === 0) {
+    return "Not started";
+  }
+  if (stats.completed < stats.total) {
+    return "In progress";
+  }
+  return "Completed";
+}
+
+function deriveChecklistStatsFromContent(lines) {
+  let total = 0;
+  let completed = 0;
+
+  for (const line of lines) {
+    if (/^\s*[-*]\s+\[( |x|X)\]\s+/.test(line)) {
+      total += 1;
+    }
+    if (/^\s*[-*]\s+\[(x|X)\]\s+/.test(line)) {
+      completed += 1;
+    }
+  }
+
+  return { total, completed };
 }
 
 function normalizeRelativePath(rootPath, targetPath) {
@@ -920,7 +1108,10 @@ module.exports = {
   determineLegacyCompletion,
   determineLegacyPhase,
   determineLegacyWorkflow,
+  deriveUserStoryStatus,
   extractFeatureId,
+  parseUserStories,
   parsePhaseDone,
-  parseTaskStats
+  parseTaskStats,
+  parseUserStoryTaskStats
 };

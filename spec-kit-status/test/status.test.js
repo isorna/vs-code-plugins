@@ -10,14 +10,18 @@ const {
   determineLegacyCompletion,
   determineLegacyPhase,
   determineLegacyWorkflow,
+  deriveUserStoryStatus,
   extractFeatureId,
   parsePhaseDone,
-  parseTaskStats
+  parseTaskStats,
+  parseUserStories,
+  parseUserStoryTaskStats
 } = require("../src/specKitStatus");
 const {
   KittScannerManager,
   resolveKittScannerExtension
 } = require("../src/kittScannerManager");
+const { buildNewFeaturePromptTemplate } = require("../src/newFeatureTemplate");
 
 async function run() {
   assert.strictEqual(extractFeatureId("001-chat"), "001-chat");
@@ -50,18 +54,56 @@ async function run() {
 
   assert.strictEqual(determineLegacyWorkflow("Specify"), "Foundation");
   assert.strictEqual(determineLegacyWorkflow("Implement"), "Implementation");
+  assert.strictEqual(deriveUserStoryStatus({ total: 0, completed: 0 }), "No tasks");
+  assert.strictEqual(deriveUserStoryStatus({ total: 2, completed: 0 }), "Not started");
+  assert.strictEqual(deriveUserStoryStatus({ total: 2, completed: 1 }), "In progress");
+  assert.strictEqual(deriveUserStoryStatus({ total: 2, completed: 2 }), "Completed");
 
   const fallbackRoot = await fs.mkdtemp(path.join(os.tmpdir(), "spec-kit-status-fallback-"));
   await fs.mkdir(path.join(fallbackRoot, ".specify", "memory"), { recursive: true });
   await fs.writeFile(path.join(fallbackRoot, ".specify", "memory", "constitution.md"), "# Constitution\n");
   await fs.mkdir(path.join(fallbackRoot, "specs", "001-status-dashboard"), { recursive: true });
-  await fs.writeFile(path.join(fallbackRoot, "specs", "001-status-dashboard", "spec.md"), "# Spec\n");
+  await fs.writeFile(
+    path.join(fallbackRoot, "specs", "001-status-dashboard", "spec.md"),
+    [
+      "# Spec",
+      "",
+      "## User Story 1: View status",
+      "",
+      "Details",
+      "",
+      "## User Story 2: Refresh status",
+      "",
+      "More details"
+    ].join("\n")
+  );
   await fs.writeFile(path.join(fallbackRoot, "specs", "001-status-dashboard", "plan.md"), "# Plan\n");
+  await fs.writeFile(
+    path.join(fallbackRoot, "specs", "001-status-dashboard", "US1-view-status.md"),
+    [
+      "# View status",
+      "",
+      "- [x] Tree rendered",
+      "- [ ] Status bar rendered"
+    ].join("\n")
+  );
+  await fs.writeFile(
+    path.join(fallbackRoot, "specs", "001-status-dashboard", "US2-refresh-status.md"),
+    [
+      "# Refresh status",
+      "",
+      "- [x] Parse tasks",
+      "- [ ] Refresh on changes"
+    ].join("\n")
+  );
   await fs.writeFile(
     path.join(fallbackRoot, "specs", "001-status-dashboard", "tasks.md"),
     [
+      "## User Story 1: View status",
       "- [x] Create tree view",
       "- [ ] Add status bar item",
+      "",
+      "## User Story 2: Refresh status",
       "- [x] Parse tasks",
       "- [ ] Refresh on changes"
     ].join("\n")
@@ -69,12 +111,60 @@ async function run() {
 
   const taskStats = await parseTaskStats(path.join(fallbackRoot, "specs", "001-status-dashboard", "tasks.md"));
   assert.deepStrictEqual(taskStats, { total: 4, completed: 2 });
+  const userStoryTaskStats = await parseUserStoryTaskStats(path.join(fallbackRoot, "specs", "001-status-dashboard", "tasks.md"));
+  assert.deepStrictEqual(Object.fromEntries(userStoryTaskStats), {
+    US1: { total: 2, completed: 1 },
+    US2: { total: 2, completed: 1 }
+  });
+  const parsedUserStories = await parseUserStories(
+    path.join(fallbackRoot, "specs", "001-status-dashboard"),
+    path.join(fallbackRoot, "specs", "001-status-dashboard", "spec.md"),
+    userStoryTaskStats
+  );
+  assert.deepStrictEqual(
+    parsedUserStories.map((story) => ({
+      id: story.id,
+      title: story.title,
+      status: story.status,
+      totalTasks: story.totalTasks,
+      completedTasks: story.completedTasks
+    })),
+    [
+      {
+        id: "US1",
+        title: "View status",
+        status: "In progress",
+        totalTasks: 2,
+        completedTasks: 1
+      },
+      {
+        id: "US2",
+        title: "Refresh status",
+        status: "In progress",
+        totalTasks: 2,
+        completedTasks: 1
+      }
+    ]
+  );
+  assert.strictEqual(parsedUserStories[0].filePath, path.join(fallbackRoot, "specs", "001-status-dashboard", "US1-view-status.md"));
 
   const fallbackStatus = await collectSpecKitStatus(fallbackRoot, { preferGitBranchFeature: false });
   assert.strictEqual(fallbackStatus.feature, "001-status-dashboard");
   assert.strictEqual(fallbackStatus.phase, "Implement");
   assert.strictEqual(fallbackStatus.workflow, "Implementation");
   assert.strictEqual(fallbackStatus.completion, 83);
+  assert.strictEqual(fallbackStatus.featureFilePath, path.join(fallbackRoot, "specs", "001-status-dashboard", "spec.md"));
+  assert.deepStrictEqual(
+    fallbackStatus.userStories.map((story) => ({
+      id: story.id,
+      status: story.status
+    })),
+    [
+      { id: "US1", status: "In progress" },
+      { id: "US2", status: "In progress" }
+    ]
+  );
+  assert.strictEqual(fallbackStatus.userStories[0].filePath, path.join(fallbackRoot, "specs", "001-status-dashboard", "US1-view-status.md"));
 
   const configuredRoot = await fs.mkdtemp(path.join(os.tmpdir(), "spec-kit-status-configured-"));
   await fs.mkdir(path.join(configuredRoot, ".specify", "memory"), { recursive: true });
@@ -179,6 +269,19 @@ async function run() {
 
   const parsedPhaseDone = await parsePhaseDone(path.join(configuredRoot, ".specify", ".runtime", "phase-done.txt"));
   assert.deepStrictEqual(parsedPhaseDone, { specification: 1 });
+  assert.match(buildNewFeaturePromptTemplate(), /# New Feature Prompt/);
+  assert.match(buildNewFeaturePromptTemplate(), /\/speckit\.specify/);
+
+  const customSpecsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "spec-kit-status-custom-specs-"));
+  await fs.mkdir(path.join(customSpecsRoot, ".specify", "memory"), { recursive: true });
+  await fs.writeFile(path.join(customSpecsRoot, ".specify", "memory", "constitution.md"), "# Constitution\n");
+  await fs.mkdir(path.join(customSpecsRoot, "product-specs", "007-custom-root"), { recursive: true });
+  await fs.writeFile(path.join(customSpecsRoot, "product-specs", "007-custom-root", "spec.md"), "# Spec\n");
+  const customStatus = await collectSpecKitStatus(customSpecsRoot, {
+    preferGitBranchFeature: false,
+    specsDirectory: "product-specs"
+  });
+  assert.strictEqual(customStatus.feature, "007-custom-root");
 
   const fallbackExtension = { id: "alt.publisher", packageJSON: { name: "kitt-scanner-statusbar" } };
   assert.strictEqual(
